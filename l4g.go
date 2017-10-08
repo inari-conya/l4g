@@ -158,7 +158,7 @@ func Log(file, lvl string, args ...interface{}) {
 	return
 }
 
-/*如果日志文件超出MAXSIZE大小，则发送邮件并立即退出应用*/
+/*如果日志文件超出MAXSIZE大小，则发送邮件并立即关闭该文件*/
 func LogMonitor() {
 	for true {
 		/*遍历日志文件*/
