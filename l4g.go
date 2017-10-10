@@ -25,23 +25,23 @@ type MyIni struct {
 	} `ini:"[config]"`
 }
 
-var LogFile map[string]*os.File
-var LogDir string
-var OldPath string
-var Tnow string
+var logfile map[string]*os.File
+var logdir string
+var oldpath string
+var tnow string
 
 var mini MyIni
 
-var MAXSIZE int64
-var User string
-var Password string
-var Host string
-var Sendto string
-var Subject string
-var Body string
+var maxsize int64
+var user string
+var password string
+var host string
+var sendto string
+var subject string
+var body string
 
 func init() {
-	MAXSIZE = 10485760 //默认日志文件不超过10M
+	maxsize = 10485760 //默认日志文件不超过10M
 
 	/*读取配置文件*/
 	content, err := ioutil.ReadFile("l4gconf.ini")
@@ -54,12 +54,12 @@ func init() {
 		panic(err)
 	}
 
-	User = mini.Config.Usr
-	Password = mini.Config.Passwd
-	Host = mini.Config.Hst
-	Sendto = mini.Config.Sndto
-	Subject = mini.Config.Sbj
-	Body = `
+	user = mini.Config.Usr
+	password = mini.Config.Passwd
+	host = mini.Config.Hst
+	sendto = mini.Config.Sndto
+	subject = mini.Config.Sbj
+	body = `
 	<html>
 	<body>
 	"` + mini.Config.Msg + `"
@@ -69,12 +69,12 @@ func init() {
 
 	/*设置日志文件占用磁盘空间上限，但不得低于10K*/
 	if mini.Config.MaxSize > 10239 {
-		MAXSIZE = mini.Config.MaxSize
+		maxsize = mini.Config.MaxSize
 	}
 
-	LogFile = make(map[string]*os.File)
+	logfile = make(map[string]*os.File)
 	/*判断log目录是否存在，不存在则创建该目录*/
-	if Exist("log") == false {
+	if exist("log") == false {
 		err := os.Mkdir("log", os.ModePerm)
 		if err != nil {
 			fmt.Println("目录创建错误:", err)
@@ -87,82 +87,54 @@ func init() {
 	today := strconv.Itoa(t)
 	path := "log/" + today
 
-	if Exist(path) == false {
+	if exist(path) == false {
 		err := os.Mkdir(path, os.ModePerm)
 		if err != nil {
 			fmt.Println("目录创建错误:", err)
 			os.Exit(1)
 		}
 	}
-	LogDir = path + "/"
+	logdir = path + "/"
 
-	go UpdateTime()
-	go LogMonitor()
+	go updatetime()
+	go logmonitor()
 }
 
 /*判断文件是否存在*/
-func Exist(filename string) bool {
+func exist(filename string) bool {
 	_, err := os.Stat(filename)
 	return err == nil || os.IsExist(err)
 }
 
 /*根据日期更新日志文件写入路径与根据时间更新日志记录时显示的时间*/
-func UpdateTime() {
+func updatetime() {
 	for true {
 		t := time.Now()
 		day := t.Day()
 		today := strconv.Itoa(day)
 		path := "log/" + today
 
-		if Exist(path) == false {
+		if exist(path) == false {
 			err := os.Mkdir(path, os.ModePerm)
 			if err != nil {
 				Log("log.log", "ERROR", "Create index error:", err)
 			} else {
-				OldPath = LogDir
-				LogDir = path + "/"
-				go YestodayCloser()
+				oldpath = logdir
+				logdir = path + "/"
+				go yestodaycloser()
 			}
 		}
 		h, m, s := t.Clock()
-		Tnow = fmt.Sprintf("%02d:%02d:%02d", h, m, s)
+		tnow = fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 		time.Sleep(1 * time.Second)
 	}
 }
 
-func Log(file, lvl string, args ...interface{}) {
-	filename := LogDir + file
-	if LogFile[filename] == nil {
-		//f, err := os.OpenFile(filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
-		f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0666)
-		if err != nil {
-			fmt.Println("Open file error:", err)
-		} else {
-			LogFile[filename] = f
-			_, err := f.Seek(0, 2) /*将io光标插入文件末尾*/
-			if err != nil {
-				fmt.Println("Set seek to end error:", err)
-			}
-		}
-	}
-
-	str := Tnow + " [" + lvl + "] "
-	for _, arg := range args {
-		str += fmt.Sprint(arg, " ")
-	}
-	str += "\n"
-	_, err := io.WriteString(LogFile[filename], str)
-	if err != nil {
-		fmt.Println("Write file error:", err)
-	}
-	return
-}
-
 /*如果日志文件超出MAXSIZE大小，则发送邮件并立即关闭该文件*/
-func LogMonitor() {
+func logmonitor() {
 	for true {
 		/*遍历日志文件*/
-		for v, k := range LogFile {
+		for v, k := range logfile {
 			Fstat, err := os.Stat(v)
 			if err != nil {
 				Log("log.log", "ERROR", "Get file statue error:", err)
@@ -170,13 +142,13 @@ func LogMonitor() {
 			Fsize := Fstat.Size()
 			//fmt.Println("Size:", Fsize)
 			/*判断日志文件大小*/
-			if Fsize > MAXSIZE {
+			if Fsize > maxsize {
 				i := 0
 				for i < 3 {
 					Log("sendmail.log", "INFO", "send mail")
-					Subject += v
+					subject += v
 					/*发送日志异常告警邮件*/
-					err := SendMail(User, Password, Host, Sendto, Subject, Body, "html")
+					err := sendmail(user, password, host, sendto, subject, body, "html")
 					if err != nil {
 						Log("sendmail.log", "ERROR", "send mail error:", err)
 					} else {
@@ -185,7 +157,7 @@ func LogMonitor() {
 					i += 1
 				}
 				k.Seek(0, 0) /*将io光标插入文件头*/
-				k.Truncate(MAXSIZE) /*砍去超出部分*/
+				k.Truncate(maxsize) /*砍去超出部分*/
 				k.Close()/*关闭文件，不再写入新内容*/
 			}
 		}
@@ -200,7 +172,7 @@ func LogMonitor() {
 		tmrday := tmr.Day()
 		strday := strconv.Itoa(tmrday)
 		logpath := "log/" + strday
-		if Exist(logpath) == true {
+		if exist(logpath) == true {
 			err := os.RemoveAll(logpath)
 			if err != nil {
 				Log("log.log", "ERROR", "Delete tomorrow log index error:", err)
@@ -213,14 +185,14 @@ func LogMonitor() {
 
 /*关闭所有已打开的文件*/
 func LogClose() {
-	for _, k := range LogFile {
+	for _, k := range logfile {
 		k.Close()
 	}
 	return
 }
 
 /*发送邮件*/
-func SendMail(user, password, host, to, subject, body, mailtype string) error {
+func sendmail(user, password, host, to, subject, body, mailtype string) error {
 	hp := strings.Split(host, ":")
 	auth := smtp.PlainAuth("", user, password, hp[0])
 	var content_type string
@@ -237,16 +209,53 @@ func SendMail(user, password, host, to, subject, body, mailtype string) error {
 }
 
 /*关闭昨天的文件*/
-func YestodayCloser() {
+func yestodaycloser() {
 	/*为防止出现冲突，等待10分钟后再执行关闭操作*/
 	time.Sleep(600 * time.Second)
-	files, _ := ioutil.ReadDir(OldPath)
+	files, _ := ioutil.ReadDir(oldpath)
 	for _, file := range files {
 		filename := file.Name()
-		fi := OldPath + filename
-		if LogFile[fi] != nil {
-			LogFile[fi].Close()
-			delete(LogFile, fi)
+		fi := oldpath + filename
+		if logfile[fi] != nil {
+			logfile[fi].Close()
+			delete(logfile, fi)
 		}
+	}
+}
+
+func Log(file, lvl string, args ...interface{}) {
+	filename := logdir + file
+	str := tnow + " [" + lvl + "] " + fmt.Sprint(args...) + "\n"
+	go wrlog(filename, str)
+	return
+}
+
+func Logf(file, lvl, format string, args ...interface{}) {
+	filename := logdir + file
+	str := tnow + " [" + lvl + "] " + fmt.Sprintf(format, args...) + "\n"
+	go wrlog(filename, str)
+	return
+}
+
+func wrlog(filename, str string) {
+	/*判断需要写入的文件是否已经打开*/
+	if logfile[filename] == nil {
+		//f, err := os.OpenFile(filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
+		f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0666)
+		if err != nil {
+			fmt.Println("Open file error:", err)
+		} else {
+			logfile[filename] = f
+			_, err := f.Seek(0, 2) /*将io光标插入文件末尾*/
+			if err != nil {
+				fmt.Println("Set seek to end error:", err)
+			}
+		}
+	}
+	
+	/*执行写操作*/
+	_, err := io.WriteString(logfile[filename], str)
+	if err != nil {
+		fmt.Println("Write file error:", err)
 	}
 }
