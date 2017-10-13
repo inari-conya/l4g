@@ -46,12 +46,12 @@ func init() {
 	/*读取配置文件*/
 	content, err := ioutil.ReadFile("l4gconf.ini")
 	if err != nil {
-		panic(err)
+		fmt.Println("read l4gconf.ini error:", err)
 	}
 
 	err = ini.Unmarshal(content, &mini)
 	if err != nil {
-		panic(err)
+		fmt.Println("Unmarshal config file error:", err)
 	}
 
 	user = mini.Config.Usr
@@ -78,7 +78,6 @@ func init() {
 		err := os.Mkdir("log", os.ModePerm)
 		if err != nil {
 			fmt.Println("目录创建错误:", err)
-			os.Exit(1)
 		}
 	}
 
@@ -91,7 +90,6 @@ func init() {
 		err := os.Mkdir(path, os.ModePerm)
 		if err != nil {
 			fmt.Println("目录创建错误:", err)
-			os.Exit(1)
 		}
 	}
 	logdir = path + "/"
@@ -117,6 +115,7 @@ func updatetime() {
 		if exist(path) == false {
 			err := os.Mkdir(path, os.ModePerm)
 			if err != nil {
+				fmt.Println("Create index error:", err)
 				Log("log.log", "ERROR", "Create index error:", err)
 			} else {
 				oldpath = logdir
@@ -137,6 +136,7 @@ func logmonitor() {
 		for v, k := range logfile {
 			Fstat, err := os.Stat(v)
 			if err != nil {
+				fmt.Println("Get file statue error:", err)
 				Log("log.log", "ERROR", "Get file statue error:", err)
 			}
 			Fsize := Fstat.Size()
@@ -150,15 +150,16 @@ func logmonitor() {
 					/*发送日志异常告警邮件*/
 					err := sendmail(user, password, host, sendto, subject, body, "html")
 					if err != nil {
+						fmt.Println("send mail error:", err)
 						Log("sendmail.log", "ERROR", "send mail error:", err)
 					} else {
 						break
 					}
 					i += 1
 				}
-				k.Seek(0, 0) /*将io光标插入文件头*/
+				k.Seek(0, 0)        /*将io光标插入文件头*/
 				k.Truncate(maxsize) /*砍去超出部分*/
-				k.Close()/*关闭文件，不再写入新内容*/
+				k.Close()           /*关闭文件，不再写入新内容*/
 			}
 		}
 
@@ -175,6 +176,7 @@ func logmonitor() {
 		if exist(logpath) == true {
 			err := os.RemoveAll(logpath)
 			if err != nil {
+				fmt.Println("Delete tomorrow log index error:", err)
 				Log("log.log", "ERROR", "Delete tomorrow log index error:", err)
 			}
 		}
@@ -240,7 +242,6 @@ func Logf(file, lvl, format string, args ...interface{}) {
 func wrlog(filename, str string) {
 	/*判断需要写入的文件是否已经打开*/
 	if logfile[filename] == nil {
-		//f, err := os.OpenFile(filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
 		f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE, 0666)
 		if err != nil {
 			fmt.Println("Open file error:", err)
@@ -252,7 +253,7 @@ func wrlog(filename, str string) {
 			}
 		}
 	}
-	
+
 	/*执行写操作*/
 	_, err := io.WriteString(logfile[filename], str)
 	if err != nil {
