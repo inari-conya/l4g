@@ -66,7 +66,8 @@ func init() {
 	</body>
 	</html>
 	`
-
+	/*显示配置文件内容*/
+	fmt.Println(mini.Config)
 	/*设置日志文件占用磁盘空间上限，但不得低于10K*/
 	if mini.Config.MaxSize > 10239 {
 		maxsize = mini.Config.MaxSize
