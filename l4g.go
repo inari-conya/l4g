@@ -10,7 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"net/mail"
+
 	"github.com/go-ini"
+	"github.com/scorredoira/email"
 )
 
 type MyIni struct {
@@ -22,6 +25,7 @@ type MyIni struct {
 		Sndto   string `ini:"sendto"`
 		Sbj     string `ini:"subject"`
 		Msg     string `ini:"message"`
+		Uname   string `ini:"username"`
 	} `ini:"[config]"`
 }
 
@@ -39,6 +43,7 @@ var host string
 var sendto string
 var subject string
 var body string
+var username string
 
 func init() {
 	maxsize = 10485760 //默认日志文件不超过10M
@@ -59,13 +64,9 @@ func init() {
 	host = mini.Config.Hst
 	sendto = mini.Config.Sndto
 	subject = mini.Config.Sbj
-	body = `
-	<html>
-	<body>
-	"` + mini.Config.Msg + `"
-	</body>
-	</html>
-	`
+	body = mini.Config.Msg
+	username = mini.Config.Uname
+
 	/*显示配置文件内容*/
 	fmt.Println(mini.Config)
 	/*设置日志文件占用磁盘空间上限，但不得低于10K*/
@@ -144,12 +145,16 @@ func logmonitor() {
 			//fmt.Println("Size:", Fsize)
 			/*判断日志文件大小*/
 			if Fsize > maxsize {
+				k.Seek(0, 0)        /*将io光标插入文件头*/
+				k.Truncate(maxsize) /*砍去超出部分*/
+				k.Close()           /*关闭文件，不再写入新内容*/
 				i := 0
 				for i < 3 {
 					Log("sendmail.log", "INFO", "send mail")
 					subject += v
 					/*发送日志异常告警邮件*/
-					err := sendmail(user, password, host, sendto, subject, body, "html")
+					//err := sendmail(user, password, host, sendto, subject, body, "html")
+					err := sendmail(v)
 					if err != nil {
 						fmt.Println("send mail error:", err)
 						Log("sendmail.log", "ERROR", "send mail error:", err)
@@ -158,9 +163,6 @@ func logmonitor() {
 					}
 					i += 1
 				}
-				k.Seek(0, 0)        /*将io光标插入文件头*/
-				k.Truncate(maxsize) /*砍去超出部分*/
-				k.Close()           /*关闭文件，不再写入新内容*/
 			}
 		}
 
@@ -181,7 +183,7 @@ func logmonitor() {
 				Log("log.log", "ERROR", "Delete tomorrow log index error:", err)
 			}
 		}
-		//time.Sleep(1 * time.Second) 测试用
+		//time.Sleep(1 * time.Second)
 		time.Sleep(60 * time.Second)
 	}
 }
@@ -195,7 +197,7 @@ func LogClose() {
 }
 
 /*发送邮件*/
-func sendmail(user, password, host, to, subject, body, mailtype string) error {
+/*func sendmail(user, password, host, to, subject, body, mailtype string) error {
 	hp := strings.Split(host, ":")
 	auth := smtp.PlainAuth("", user, password, hp[0])
 	var content_type string
@@ -209,6 +211,25 @@ func sendmail(user, password, host, to, subject, body, mailtype string) error {
 	send_to := strings.Split(to, ";")
 	err := smtp.SendMail(host, auth, user, send_to, msg)
 	return err
+}*/
+func sendmail(filename string) error {
+	m := email.NewMessage(subject, body)
+	m.From = mail.Address{Name: username, Address: user}
+	m.To = strings.Split(sendto, ",")
+
+	// add attachments
+	if err := m.Attach(filename); err != nil {
+		fmt.Println("Send mail error:", err)
+		return err
+	}
+
+	// send it
+	auth := smtp.PlainAuth("", user, password, strings.TrimSuffix(host, ":25"))
+	if err := email.Send(host, auth, m); err != nil {
+		fmt.Println("Send mail error:", err)
+		return err
+	}
+	return nil
 }
 
 /*关闭昨天的文件*/
